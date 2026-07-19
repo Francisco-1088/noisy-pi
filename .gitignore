@@ -1,0 +1,9 @@
+# Cloned upstream + local venv (recreated by install.sh)
+noisy/
+venv/
+
+# Runtime artifacts
+*.log
+*.lock
+__pycache__/
+*.pyc

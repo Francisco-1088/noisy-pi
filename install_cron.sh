@@ -7,7 +7,7 @@
 # it rolls a skip chance, sleeps a random jitter, then runs for a random
 # duration. Net effect: irregular, human-looking bursts of traffic.
 #
-set -euo pipefail
+set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
@@ -17,8 +17,14 @@ CRON_EXPR="${CRON_EXPR:-*/30 * * * *}"
 CMD="cd $HERE && ./venv/bin/python noisy_random.py"
 LINE="$CRON_EXPR $CMD  # noisy-random"
 
-# Remove any prior noisy-random line, then append the new one.
-( crontab -l 2>/dev/null | grep -v '# noisy-random' ; echo "$LINE" ) | crontab -
+# Build the new crontab in a temp file so an empty/missing existing crontab
+# (grep finding no matches, or `crontab -l` failing on a fresh machine) can't
+# abort the script.
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+crontab -l 2>/dev/null | grep -v '# noisy-random' > "$TMP" || true
+echo "$LINE" >> "$TMP"
+crontab "$TMP"
 
 echo ">> Installed crontab entry:"
 echo "     $LINE"

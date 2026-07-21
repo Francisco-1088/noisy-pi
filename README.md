@@ -48,14 +48,37 @@ All knobs (with defaults):
 | `NOISY_THREADS_MAX`      | 20      | Max crawler threads                       |
 | `NOISY_MIN_SLEEP`        | 3.0     | Min per-request delay (s)                 |
 | `NOISY_MAX_SLEEP`        | 20.0    | Max per-request delay (s)                 |
+| `NOISY_CRAWL_LOG_LEVEL`  | debug   | Crawl log detail (debug=per-URL list)     |
 
 Change the cron cadence by setting `CRON_EXPR` before running `install_cron.sh`,
 e.g. `CRON_EXPR="0 * * * *" bash install_cron.sh` for hourly.
 
 ## Logs
 
-- `noisy_random.log` — wrapper decisions (skip / jitter / start / stop).
-- `noisy_crawl.log`  — noisy's own crawl output.
+- `noisy_random.log` — wrapper decisions (skip / jitter / start / stop). Each
+  start line names the crawl log for that run.
+- `logs/crawl-YYYYmmdd-HHMMSS.log` — one file per run with noisy's own output.
+
+## Which sites were attempted in a run
+
+noisy logs each URL it visits only at **debug** level, which the wrapper uses by
+default (`NOISY_CRAWL_LOG_LEVEL=debug`), writing a separate log per run. To list
+the sites:
+
+```bash
+./sites.sh                       # most recent run
+./sites.sh logs/crawl-20260720-143000.log   # a specific run
+```
+
+Or grep a log directly:
+
+```bash
+grep 'Visiting' logs/crawl-20260720-143000.log
+```
+
+Set `NOISY_CRAWL_LOG_LEVEL=info` for stats-only (no per-URL list) or `warning`
+to keep the logs near-empty. Debug logs can grow large, so prune old ones
+periodically, e.g. `find logs -name 'crawl-*.log' -mtime +7 -delete`.
 
 ## Remove
 

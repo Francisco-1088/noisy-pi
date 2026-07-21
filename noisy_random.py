@@ -18,6 +18,7 @@ import random
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 # --- Paths -------------------------------------------------------------------
@@ -25,8 +26,13 @@ HERE = Path(__file__).resolve().parent
 NOISY_DIR = Path(os.environ.get("NOISY_DIR", HERE / "noisy"))
 VENV_PY = Path(os.environ.get("NOISY_PY", HERE / "venv" / "bin" / "python"))
 LOG_FILE = Path(os.environ.get("NOISY_LOG", HERE / "noisy_random.log"))
-NOISY_LOG_FILE = Path(os.environ.get("NOISY_CRAWL_LOG", HERE / "noisy_crawl.log"))
+# Per-run crawl logs land here, one file per run: logs/crawl-YYYYmmdd-HHMMSS.log
+CRAWL_LOG_DIR = Path(os.environ.get("NOISY_CRAWL_LOG_DIR", HERE / "logs"))
 LOCK_FILE = Path(os.environ.get("NOISY_LOCK", HERE / "noisy_random.lock"))
+
+# Log level noisy writes to its per-run log. "debug" records every URL attempted
+# (the "Visiting ..." lines); "info" gives stats only; "warning" is near-silent.
+CRAWL_LOG_LEVEL = os.environ.get("NOISY_CRAWL_LOG_LEVEL", "debug")
 
 
 def _envf(name, default):
@@ -106,6 +112,10 @@ def main():
         duration = random.randint(RUN_MIN_SEC, RUN_MAX_SEC)
         threads = random.randint(THREADS_MIN, THREADS_MAX)
 
+        CRAWL_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        crawl_log = CRAWL_LOG_DIR / f"crawl-{stamp}.log"
+
         cmd = [
             str(VENV_PY),
             "noisy.py",
@@ -113,10 +123,13 @@ def main():
             "--threads", str(threads),
             "--min_sleep", str(MIN_SLEEP),
             "--max_sleep", str(MAX_SLEEP),
-            "--log", "warning",
-            "--logfile", str(NOISY_LOG_FILE),
+            "--log", CRAWL_LOG_LEVEL,
+            "--logfile", str(crawl_log),
         ]
-        logging.info("starting noisy for %d s with %d threads", duration, threads)
+        logging.info(
+            "starting noisy for %d s with %d threads; crawl log -> %s",
+            duration, threads, crawl_log,
+        )
         start = time.time()
         # Give noisy a hard ceiling in case --timeout is ignored/hangs.
         try:

@@ -1,0 +1,102 @@
+{
+  "net": {
+    "wired_iface": "eth0",
+    "wifi_iface": "wlan0",
+    "route_table_base": 200,
+    "route_rule_priority_base": 10000,
+    "nmcli_up_timeout": 90
+  },
+  "run": {
+    "run_probability": 1.0,
+    "jitter_min_sec": 0,
+    "jitter_max_sec": 120,
+    "run_min_sec": 300,
+    "run_max_sec": 1800,
+    "threads_min": 5,
+    "threads_max": 20,
+    "min_sleep": 3.0,
+    "max_sleep": 20.0,
+    "crawl_log_level": "debug"
+  },
+  "profiles": [
+    {
+      "slot": 1,
+      "name": "wired-untagged",
+      "kind": "wired",
+      "vlan": null,
+      "spoof": false,
+      "management": true,
+      "device": null,
+      "oui_pool": null,
+      "hostname_template": null,
+      "user_agent": null,
+      "dhcp_vendor_class": null,
+      "dhcp_client_id": null,
+      "comment": "Default wired untagged interface; real Pi identity, no spoofing. Also the management link."
+    },
+    {
+      "slot": 2,
+      "name": "wired-vlan3-macbook",
+      "kind": "wired",
+      "vlan": 3,
+      "spoof": true,
+      "management": false,
+      "device": "apple_macbook",
+      "oui_pool": "apple",
+      "hostname_template": "{name}-mbp",
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+      "dhcp_vendor_class": null,
+      "dhcp_client_id": null,
+      "comment": "VLAN tag 3, spoofed as an Apple MacBook."
+    },
+    {
+      "slot": 3,
+      "name": "wired-vlan4-intel",
+      "kind": "wired",
+      "vlan": 4,
+      "spoof": true,
+      "management": false,
+      "device": "intel_windows",
+      "oui_pool": "intel",
+      "hostname_template": "WIN-{name}",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
+      "dhcp_vendor_class": "MSFT 5.0",
+      "dhcp_client_id": "mac",
+      "comment": "VLAN tag 4, spoofed as an Intel/Windows PC."
+    },
+    {
+      "slot": 4,
+      "name": "wifi-selabs-iphone",
+      "kind": "wifi",
+      "ssid": "1Meter-SE-Labs-Spoke-1",
+      "wifi_security": "wpa-psk",
+      "psk": "meterselabs",
+      "spoof": true,
+      "management": false,
+      "device": "apple_iphone",
+      "oui_pool": "apple",
+      "hostname_template": "{name}-iphone",
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
+      "dhcp_vendor_class": null,
+      "dhcp_client_id": null,
+      "comment": "WiFi to SSID 1Meter-SE-Labs-Spoke-1 (WPA2-PSK), spoofed as an iPhone."
+    },
+    {
+      "slot": 5,
+      "name": "wifi-guest-galaxy",
+      "kind": "wifi",
+      "ssid": "1Meter-Spoke-1-Guest",
+      "wifi_security": "owe",
+      "psk": null,
+      "spoof": true,
+      "management": false,
+      "device": "samsung_galaxy",
+      "oui_pool": "samsung",
+      "hostname_template": "{name}-Galaxy-S24",
+      "user_agent": "Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+      "dhcp_vendor_class": null,
+      "dhcp_client_id": null,
+      "comment": "WiFi to SSID 1Meter-Spoke-1-Guest (OWE / enhanced open), spoofed as a Samsung Galaxy S24."
+    }
+  ]
+}

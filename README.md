@@ -4,6 +4,81 @@ Runs [madereddy/noisy](https://github.com/madereddy/noisy) — a crawler that ge
 random HTTP/S traffic to mimic human browsing — on a Raspberry Pi in irregular bursts
 via cron.
 
+> **`multiface` branch** — this branch adds a multi-interface mode that cycles noisy
+> traffic across five spoofed network identities (untagged wired, two tagged VLANs, and
+> two WiFi SSIDs) for Meter SE-Labs client-fingerprint testing. The original
+> single-interface wrapper (`noisy_random.py`) is still here and documented further down.
+
+## Multi-interface mode (`noisy_multiface.py`)
+
+Each cron firing advances a rotation through 5 "interfaces". After 5 runs all have been
+used once, then it repeats:
+
+| Slot | Interface        | VLAN / SSID                        | Spoofed as        | Hostname            |
+|------|------------------|------------------------------------|-------------------|---------------------|
+| 1    | wired `eth0`     | untagged                           | real Pi (none)    | —                   |
+| 2    | wired `eth0.3`   | VLAN tag 3                         | Apple MacBook     | `<name>-mbp`        |
+| 3    | wired `eth0.4`   | VLAN tag 4                         | Intel / Windows   | `WIN-<name>`        |
+| 4    | wifi `wlan0`     | `1Meter-SE-Labs-Spoke-1` (WPA-PSK) | iPhone            | `<name>-iphone`     |
+| 5    | wifi `wlan0`     | `1Meter-Spoke-1-Guest` (OWE)       | Samsung Galaxy S24| `<name>-Galaxy-S24` |
+
+For each spoofing slot the wrapper, via NetworkManager (`nmcli`):
+
+- clones a **MAC** with the right vendor OUI (Apple / Intel / Samsung) so fingerprinting
+  attributes it correctly — generated once and reused (`identities.json`);
+- sets the **DHCP hostname** (option 12) and, for Windows, the vendor class (`MSFT 5.0`);
+- forces a matching **HTTP User-Agent** in noisy via the `--user-agent` patch;
+- brings the VLAN/WiFi connection up with DHCP, then installs **policy routing** so noisy
+  (bound to that interface's IP via `--local-addr`) egresses that interface **without
+  touching the system default route** — so your SSH/management path on untagged `eth0`
+  stays up the whole time.
+
+`<name>` is a random English first name, chosen once per identity and persisted.
+
+### Requirements & assumptions
+
+- **Raspberry Pi OS with NetworkManager** (`nmcli`) — the Bookworm default.
+- Runs **as root** (MAC cloning + `ip rule`/`ip route`), so cron is installed under root.
+- The Pi's switch port must **trunk VLANs 3 and 4** (tagged) with the untagged/native VLAN
+  for management, and both WiFi SSIDs must be reachable.
+- Management is on **untagged `eth0`**; the tool never changes `eth0`'s MAC or default
+  route, so it won't cut SSH. (If you manage the Pi over WiFi instead, slots 4/5 will
+  disrupt that link while active — manage over wired.)
+
+### Install & run (on the Pi)
+
+```bash
+git clone -b multiface https://github.com/Francisco-1088/noisy-pi.git
+cd noisy-pi
+bash install.sh                 # clones + patches noisy, builds venv, checks nmcli
+./venv/bin/python identities.py # generate & preview the spoofed identities
+sudo ./venv/bin/python noisy_multiface.py   # test ONE rotation step
+tail -f noisy_multiface.log
+bash install_cron.sh            # install into root crontab (every 30 min)
+```
+
+### Config
+
+Everything lives in [`config.json`](config.json): interface names, the 5 profiles
+(VLAN ids, SSIDs, security, User-Agents, DHCP options), and the run knobs
+(`run_probability`, jitter, duration, threads, sleeps, crawl log level). Edit and it
+takes effect next run — no code changes needed. Identities and the rotation counter are
+generated at runtime into `identities.json` / `state/` (both gitignored).
+
+### Which sites / identity did a run use
+
+- `noisy_multiface.log` — one line per run naming the slot, interface, MAC, hostname, UA,
+  IP, and the per-run crawl log path.
+- `logs/crawl-<ts>-<profile>.log` — noisy's own output for that run; `./sites.sh` lists
+  the URLs attempted (see below).
+
+---
+
+## Single-interface mode (`noisy_random.py`)
+
+The original wrapper. `noisy.py` normally runs forever; instead cron fires
+`noisy_random.py` on a fixed cadence and makes each run look random.
+
 ## How it works
 
 `noisy.py` normally runs forever. Instead of that, cron fires `noisy_random.py` on a

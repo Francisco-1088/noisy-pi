@@ -7,3 +7,8 @@ venv/
 *.lock
 __pycache__/
 *.pyc
+logs/
+
+# Generated + local state (stable spoofed identities, rotation counter)
+identities.json
+state/

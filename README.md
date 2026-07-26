@@ -19,8 +19,11 @@ used once, then it repeats:
 | 1    | wired `eth0`     | untagged                           | real Pi (none)    | —                   |
 | 2    | wired `eth0.3`   | VLAN tag 3                         | Apple MacBook     | `<name>-mbp`        |
 | 3    | wired `eth0.4`   | VLAN tag 4                         | Intel / Windows   | `WIN-<name>`        |
-| 4    | wifi `wlan0`     | `1Meter-SE-Labs-Spoke-1` (WPA-PSK) | iPhone            | `<name>-iphone`     |
+| 4    | wifi `wlan0`     | `1Meter-SE-Labs-Spoke-1` (WPA3-Transition → SAE) | iPhone | `<name>-iphone`     |
 | 5    | wifi `wlan0`     | `1Meter-Spoke-1-Guest` (OWE)       | Samsung Galaxy S24| `<name>-Galaxy-S24` |
+
+Before either WiFi slot takes over the radio, the wrapper **gracefully disconnects**
+`wlan0` from whatever it's currently associated with (`nmcli device disconnect`).
 
 For each spoofing slot the wrapper, via NetworkManager (`nmcli`):
 
@@ -39,11 +42,15 @@ For each spoofing slot the wrapper, via NetworkManager (`nmcli`):
 
 - **Raspberry Pi OS with NetworkManager** (`nmcli`) — the Bookworm default.
 - Runs **as root** (MAC cloning + `ip rule`/`ip route`), so cron is installed under root.
-- The Pi's switch port must **trunk VLANs 3 and 4** (tagged) with the untagged/native VLAN
-  for management, and both WiFi SSIDs must be reachable.
-- Management is on **untagged `eth0`**; the tool never changes `eth0`'s MAC or default
-  route, so it won't cut SSH. (If you manage the Pi over WiFi instead, slots 4/5 will
-  disrupt that link while active — manage over wired.)
+- The Pi's switch port must **trunk VLANs 3 and 4** (tagged) with the untagged/native VLAN,
+  and both WiFi SSIDs must be reachable.
+- **Management is Raspberry Pi Connect**, which rides the *system default route* outbound
+  to Raspberry Pi's relay servers — it isn't bound to an interface. The tool never changes
+  the default route (spoofed leases are `ipv4.never-default`, and noisy egress is confined
+  to per-interface policy routing), so Pi Connect stays up throughout. The one requirement:
+  **untagged `eth0` must be the default route and have internet**. Slots 4/5 take `wlan0`
+  over temporarily, which is fine as long as your default route (and thus Pi Connect) is on
+  wired `eth0`, not WiFi.
 
 ### Install & run (on the Pi)
 

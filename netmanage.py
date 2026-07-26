@@ -15,6 +15,7 @@ Requires root (nmcli MAC cloning + `ip rule`/`ip route`).
 """
 
 import ipaddress
+import re
 import subprocess
 import time
 
@@ -43,6 +44,14 @@ def _nmcli_get(field, iface, log):
     return ""
 
 
+def _dhcp_gateway(iface, log):
+    """Fallback gateway lookup from the DHCP lease (used when never-default is set)."""
+    proc = run(["nmcli", "-g", "DHCP4.OPTION", "device", "show", iface],
+               log, check=False, quiet=True)
+    m = re.search(r"routers?\s*=\s*(\d+\.\d+\.\d+\.\d+)", proc.stdout)
+    return m.group(1) if m else ""
+
+
 def _read_ipv4(iface, log, tries=10, delay=2.0):
     """Return (ip, prefixlen, gateway) once DHCP has assigned an address."""
     for _ in range(tries):
@@ -50,9 +59,19 @@ def _read_ipv4(iface, log, tries=10, delay=2.0):
         gw = _nmcli_get("IP4.GATEWAY", iface, log)      # e.g. "192.168.3.1"
         if addr and "/" in addr:
             ip, prefix = addr.split("/", 1)
+            # With ipv4.never-default set, IP4.GATEWAY may be blank; recover it
+            # from the DHCP lease so we can still build our private route table.
+            if not gw:
+                gw = _dhcp_gateway(iface, log)
             return ip, int(prefix), (gw or None)
         time.sleep(delay)
     return None, None, None
+
+
+def _wifi_is_connected(iface, log):
+    """True if the WiFi device currently has an active association."""
+    state = _nmcli_get("GENERAL.STATE", iface, log)  # e.g. "100 (connected)"
+    return "connected" in state and "disconnected" not in state
 
 
 def _table_and_priority(net, slot):
@@ -88,6 +107,10 @@ def _apply_dhcp_identity(con, profile, ident, log):
         "ipv4.method", "auto",
         "ipv4.dhcp-hostname", ident["hostname"],
         "ipv4.dhcp-send-hostname", "yes",
+        # Never let a spoofed lease install a default route: the system default
+        # (untagged eth0) must stay put so Raspberry Pi Connect — which rides the
+        # default route outbound — is never rerouted through a spoofed interface.
+        "ipv4.never-default", "yes",
         "ipv6.method", "ignore",
         "connection.autoconnect", "no",
     ]
@@ -136,6 +159,12 @@ def setup(profile, ident, net, log):
         iface = wifi
         con = "noisy-wifi"
         run(["nmcli", "connection", "delete", con], log, check=False, quiet=True)
+        # Gracefully disconnect whatever wlan0 is currently associated with
+        # before we take the radio over for this SSID (proper deauth, not a
+        # yanked link).
+        if _wifi_is_connected(wifi, log):
+            log.info("wlan0 is associated; disconnecting gracefully before takeover")
+            run(["nmcli", "device", "disconnect", wifi], log, check=False)
         run(["nmcli", "device", "wifi", "rescan"], log, check=False, quiet=True)
         run(["nmcli", "connection", "add", "type", "wifi", "con-name", con,
              "ifname", wifi, "ssid", profile["ssid"]], log)
@@ -143,6 +172,13 @@ def setup(profile, ident, net, log):
         if sec == "wpa-psk":
             run(["nmcli", "connection", "modify", con,
                  "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", profile["psk"]], log)
+        elif sec == "sae":
+            # WPA3-Personal (SAE). The SSID is WPA3-Transition (WPA2/WPA3 mixed),
+            # and a WPA3-capable client like an iPhone negotiates SAE. pmf
+            # "optional" keeps association robust across transition-mode APs.
+            run(["nmcli", "connection", "modify", con,
+                 "wifi-sec.key-mgmt", "sae", "wifi-sec.psk", profile["psk"],
+                 "wifi-sec.pmf", "optional"], log)
         elif sec == "owe":
             run(["nmcli", "connection", "modify", con, "wifi-sec.key-mgmt", "owe"], log)
         else:

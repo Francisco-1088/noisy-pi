@@ -37,6 +37,7 @@ import netmanage
 
 HERE = Path(__file__).resolve().parent
 CONFIG_FILE = Path(os.environ.get("NOISY_CONFIG", HERE / "config.json"))
+SECRETS_FILE = Path(os.environ.get("NOISY_SECRETS", HERE / "secrets.json"))
 VENV_PY = Path(os.environ.get("NOISY_PY", HERE / "venv" / "bin" / "python"))
 NOISY_DIR = Path(os.environ.get("NOISY_DIR", HERE / "noisy"))
 LOG_FILE = Path(os.environ.get("NOISY_LOG", HERE / "noisy_multiface.log"))
@@ -44,6 +45,25 @@ CRAWL_LOG_DIR = Path(os.environ.get("NOISY_CRAWL_LOG_DIR", HERE / "logs"))
 LOCK_FILE = Path(os.environ.get("NOISY_LOCK", HERE / "noisy_multiface.lock"))
 STATE_DIR = HERE / "state"
 ROTATION_FILE = STATE_DIR / "rotation.txt"
+
+
+def load_secrets():
+    """Load per-profile secrets (e.g. WiFi PSKs) from the gitignored secrets.json.
+
+    Kept out of config.json so no credential is ever committed. Shape:
+        {"psk": {"<profile name>": "<passphrase>"}}
+    """
+    if SECRETS_FILE.exists():
+        return json.loads(SECRETS_FILE.read_text())
+    return {}
+
+
+def apply_secrets(profiles, secrets, log):
+    """Overlay secrets onto profiles in memory (never written back to disk)."""
+    psk_map = secrets.get("psk", {})
+    for p in profiles:
+        if p["name"] in psk_map:
+            p["psk"] = psk_map[p["name"]]
 
 
 def setup_logging():
@@ -127,6 +147,7 @@ def main():
     cfg = json.loads(CONFIG_FILE.read_text())
     net, run_cfg, profiles = cfg["net"], cfg["run"], cfg["profiles"]
     profiles = sorted(profiles, key=lambda p: p["slot"])
+    apply_secrets(profiles, load_secrets(), log)
 
     lock = acquire_lock()
     if lock is None:

@@ -169,6 +169,10 @@ def setup(profile, ident, net, log):
         run(["nmcli", "connection", "add", "type", "wifi", "con-name", con,
              "ifname", wifi, "ssid", profile["ssid"]], log)
         sec = profile["wifi_security"]
+        if sec in ("wpa-psk", "sae") and not profile.get("psk"):
+            raise RuntimeError(
+                f"{profile['name']}: no PSK. Add it to secrets.json under "
+                f'psk["{profile["name"]}"] (see secrets.example.json).')
         if sec == "wpa-psk":
             run(["nmcli", "connection", "modify", con,
                  "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", profile["psk"]], log)

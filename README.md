@@ -72,6 +72,15 @@ Everything lives in [`config.json`](config.json): interface names, the 5 profile
 takes effect next run — no code changes needed. Identities and the rotation counter are
 generated at runtime into `identities.json` / `state/` (both gitignored).
 
+**Secrets** (WiFi PSKs) live in `secrets.json`, which is **gitignored and never
+committed**. `config.json` keeps `psk: null`; the real value is overlaid at runtime from
+`secrets.json`, keyed by profile name. `install.sh` seeds it from `secrets.example.json` —
+fill in the real PSK there:
+
+```json
+{ "psk": { "wifi-selabs-iphone": "your-selabs-psk" } }
+```
+
 ### Which sites / identity did a run use
 
 - `noisy_multiface.log` — one line per run naming the slot, interface, MAC, hostname, UA,

@@ -70,7 +70,7 @@
       "kind": "wifi",
       "ssid": "1Meter-SE-Labs-Spoke-1",
       "wifi_security": "sae",
-      "psk": "meterselabs",
+      "psk": null,
       "spoof": true,
       "management": false,
       "device": "apple_iphone",

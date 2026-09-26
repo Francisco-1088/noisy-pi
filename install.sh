@@ -44,6 +44,13 @@ echo ">> Applying multiface patch to noisy.py (--user-agent / --local-addr)…"
 
 chmod +x noisy_multiface.py noisy_random.py sites.sh 2>/dev/null || true
 
+if [ ! -f secrets.json ]; then
+    cp secrets.example.json secrets.json
+    echo
+    echo "!! Created secrets.json from the example. Edit it and set the real WiFi PSK(s)"
+    echo "!! before the WiFi slots will connect:  nano $HERE/secrets.json"
+fi
+
 echo
 echo ">> Done. Resolve the spoofed identities (generates identities.json):"
 echo "     ./venv/bin/python identities.py"

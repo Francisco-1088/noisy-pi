@@ -12,3 +12,6 @@ logs/
 # Generated + local state (stable spoofed identities, rotation counter)
 identities.json
 state/
+
+# Secrets (WiFi PSKs etc.) — never commit; copy secrets.example.json -> secrets.json
+secrets.json

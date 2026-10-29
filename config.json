@@ -4,7 +4,9 @@
     "wifi_iface": "wlan0",
     "route_table_base": 200,
     "route_rule_priority_base": 10000,
-    "nmcli_up_timeout": 90
+    "nmcli_up_timeout": 90,
+    "wifi_connect_attempts": 4,
+    "wifi_scan_wait": 8
   },
   "run": {
     "run_probability": 1.0,

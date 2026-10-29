@@ -68,6 +68,31 @@ def _read_ipv4(iface, log, tries=10, delay=2.0):
     return None, None, None
 
 
+def _wifi_up_with_retry(con, ssid, up_timeout, attempts, scan_wait, log):
+    """Activate a WiFi connection, retrying with a directed rescan each attempt.
+
+    In a noisy RF environment (or for a hidden OWE SSID) a single passive scan
+    often misses the network and NM returns 'could not be found' well before the
+    --wait timeout. A directed `rescan ssid <name>` probes for that specific SSID;
+    we scan, pause, then try to activate, a few times.
+    """
+    last = ""
+    for i in range(1, attempts + 1):
+        # Directed probe for the (possibly hidden) SSID. rescan can be rate-limited
+        # by NM ("scanning not allowed..."), so ignore its failure and just wait.
+        run(["nmcli", "device", "wifi", "rescan", "ssid", ssid], log, check=False, quiet=True)
+        time.sleep(scan_wait)
+        proc = run(["nmcli", "--wait", up_timeout, "connection", "up", con], log, check=False)
+        if proc.returncode == 0:
+            if i > 1:
+                log.info("wifi activated on attempt %d/%d", i, attempts)
+            return
+        last = proc.stderr.strip()
+        log.warning("wifi up attempt %d/%d failed: %s", i, attempts, last)
+        time.sleep(scan_wait)
+    raise RuntimeError(f"{con}: wifi activation failed after {attempts} attempts: {last}")
+
+
 def _wifi_is_connected(iface, log):
     """True if the WiFi device currently has an active association."""
     state = _nmcli_get("GENERAL.STATE", iface, log)  # e.g. "100 (connected)"
@@ -200,7 +225,13 @@ def setup(profile, ident, net, log):
     else:
         raise RuntimeError(f"unknown profile kind {profile['kind']!r}")
 
-    run(["nmcli", "--wait", up_timeout, "connection", "up", con], log)
+    if profile["kind"] == "wifi":
+        _wifi_up_with_retry(
+            con, profile["ssid"], up_timeout,
+            int(net.get("wifi_connect_attempts", 4)),
+            float(net.get("wifi_scan_wait", 8)), log)
+    else:
+        run(["nmcli", "--wait", up_timeout, "connection", "up", con], log)
     log.info("connection %s up as %s (mac=%s host=%s)", con, iface, ident["mac"], ident["hostname"])
 
     ip, prefix, gw = _read_ipv4(iface, log)

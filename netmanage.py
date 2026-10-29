@@ -178,11 +178,12 @@ def setup(profile, ident, net, log):
                  "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", profile["psk"]], log)
         elif sec == "sae":
             # WPA3-Personal (SAE). The SSID is WPA3-Transition (WPA2/WPA3 mixed),
-            # and a WPA3-capable client like an iPhone negotiates SAE. pmf
-            # "optional" keeps association robust across transition-mode APs.
+            # and a WPA3-capable client like an iPhone negotiates SAE. SAE mandates
+            # Protected Management Frames, so NM only accepts pmf "required" (or
+            # "default", which resolves to required) here — not "optional".
             run(["nmcli", "connection", "modify", con,
                  "wifi-sec.key-mgmt", "sae", "wifi-sec.psk", profile["psk"],
-                 "wifi-sec.pmf", "optional"], log)
+                 "wifi-sec.pmf", "required"], log)
         elif sec == "owe":
             run(["nmcli", "connection", "modify", con, "wifi-sec.key-mgmt", "owe"], log)
         else:
@@ -190,6 +191,11 @@ def setup(profile, ident, net, log):
         run(["nmcli", "connection", "modify", con,
              "802-11-wireless.cloned-mac-address", ident["mac"],
              "ipv4.route-metric", "720"], log)
+        # OWE-transition hides the encrypted BSS; set hidden so NM actively probes
+        # for it instead of relying on a passive scan. Configurable per profile.
+        if profile.get("wifi_hidden"):
+            run(["nmcli", "connection", "modify", con,
+                 "802-11-wireless.hidden", "yes"], log)
         _apply_dhcp_identity(con, profile, ident, log)
     else:
         raise RuntimeError(f"unknown profile kind {profile['kind']!r}")

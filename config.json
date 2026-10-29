@@ -87,6 +87,7 @@
       "kind": "wifi",
       "ssid": "1Meter-Spoke-1-Guest",
       "wifi_security": "owe",
+      "wifi_hidden": true,
       "psk": null,
       "spoof": true,
       "management": false,

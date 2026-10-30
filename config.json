@@ -14,6 +14,7 @@
     "jitter_max_sec": 120,
     "run_min_sec": 300,
     "run_max_sec": 1800,
+    "wifi_min_run_sec": 330,
     "threads_min": 5,
     "threads_max": 20,
     "min_sleep": 3.0,

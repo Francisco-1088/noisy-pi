@@ -105,7 +105,14 @@ def run_noisy(profile, ident, bind_ip, run_cfg, log):
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     crawl_log = CRAWL_LOG_DIR / f"crawl-{stamp}-{profile['name']}.log"
 
-    duration = random.randint(run_cfg["run_min_sec"], run_cfg["run_max_sec"])
+    # WiFi slots need to stay associated long enough for the Meter dashboard to
+    # register the client, so enforce a minimum run length for them regardless of
+    # the general run_min_sec.
+    lo = run_cfg["run_min_sec"]
+    if profile["kind"] == "wifi":
+        lo = max(lo, int(run_cfg.get("wifi_min_run_sec", 330)))
+    hi = max(run_cfg["run_max_sec"], lo)
+    duration = random.randint(lo, hi)
     threads = random.randint(run_cfg["threads_min"], run_cfg["threads_max"])
 
     cmd = [
@@ -130,7 +137,15 @@ def run_noisy(profile, ident, bind_ip, run_cfg, log):
         subprocess.run(cmd, cwd=str(NOISY_DIR), timeout=duration + 120, check=False)
     except subprocess.TimeoutExpired:
         log.warning("noisy exceeded hard timeout; terminated")
-    log.info("noisy finished after %.0f s", time.time() - start)
+    elapsed = time.time() - start
+    log.info("noisy finished after %.0f s", elapsed)
+
+    # Safety net: if noisy exited early, keep a WiFi client associated for the rest
+    # of the minimum dwell so the dashboard still registers it before teardown.
+    if profile["kind"] == "wifi" and elapsed < lo:
+        hold = lo - elapsed
+        log.info("holding wifi association %.0fs more for dashboard registration", hold)
+        time.sleep(hold)
 
 
 def main():

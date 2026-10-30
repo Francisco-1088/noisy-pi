@@ -15,19 +15,33 @@ Requires root (nmcli MAC cloning + `ip rule`/`ip route`).
 """
 
 import ipaddress
+import os
 import re
 import subprocess
+import tempfile
 import time
+
+# nmcli args whose following value is a secret and must never hit the log.
+_SECRET_ARGS = {"wifi-sec.psk", "802-11-wireless-security.psk"}
+
+
+def _redact(cmd):
+    """Copy of cmd with any secret argument's value masked, for safe logging."""
+    out = list(cmd)
+    for i, tok in enumerate(out[:-1]):
+        if tok in _SECRET_ARGS:
+            out[i + 1] = "****"
+    return out
 
 
 def run(cmd, log, check=True, quiet=False):
     """Run a command; log it; return CompletedProcess. Raises on failure if check."""
     if not quiet:
-        log.info("exec: %s", " ".join(cmd))
+        log.info("exec: %s", " ".join(_redact(cmd)))
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         msg = "cmd failed (%d): %s\nstdout: %s\nstderr: %s" % (
-            proc.returncode, " ".join(cmd), proc.stdout.strip(), proc.stderr.strip())
+            proc.returncode, " ".join(_redact(cmd)), proc.stdout.strip(), proc.stderr.strip())
         if check:
             raise RuntimeError(msg)
         if not quiet:
@@ -106,7 +120,25 @@ def _wifi_secret_audit(con, log):
                     "check config.json/secrets.json for this slot", con)
 
 
-def _wifi_connect_verified(con, iface, ssid, up_timeout, attempts, scan_wait, log):
+def _make_passwd_file(psk):
+    """Write an nmcli passwd-file containing the WiFi PSK; return its path (0600).
+
+    Handing the secret to `connection up` via `passwd-file` lets a non-interactive
+    nmcli answer NM's own secret request directly. NM re-requests the psk from a
+    secret agent at SAE activation even when it's stored in the connection (an
+    nmcli-over-sudo quirk), and in cron/SSH there is no agent — the passwd-file is
+    that agent's answer, so activation stops failing with 'Secrets were required'.
+    """
+    fd, path = tempfile.mkstemp(prefix="noisy-wifi-", suffix=".pwd")
+    try:
+        os.write(fd, f"802-11-wireless-security.psk:{psk}\n".encode())
+    finally:
+        os.close(fd)
+    os.chmod(path, 0o600)
+    return path
+
+
+def _wifi_connect_verified(con, iface, ssid, up_timeout, attempts, scan_wait, log, psk=None):
     """Activate WiFi and CONFIRM it actually works, retrying the whole sequence.
 
     Each attempt: directed rescan -> `connection up` -> confirm the device reports
@@ -116,7 +148,20 @@ def _wifi_connect_verified(con, iface, ssid, up_timeout, attempts, scan_wait, lo
     check fails we tear the connection back down and try again, up to `attempts`
     times. Returns (ip, prefix, gw) on success; raises RuntimeError if every
     attempt fails, with the reason from the last one.
+
+    For PSK/SAE networks, `psk` is supplied to each activation via a passwd-file so
+    nmcli never has to fall back to a (nonexistent) secret agent.
     """
+    passwd_file = _make_passwd_file(psk) if psk else None
+    try:
+        return _wifi_connect_loop(con, iface, ssid, up_timeout, attempts,
+                                  scan_wait, log, passwd_file)
+    finally:
+        if passwd_file and os.path.exists(passwd_file):
+            os.remove(passwd_file)
+
+
+def _wifi_connect_loop(con, iface, ssid, up_timeout, attempts, scan_wait, log, passwd_file):
     last = ""
     for i in range(1, attempts + 1):
         # Directed probe for the (possibly hidden) SSID. rescan can be rate-limited
@@ -124,7 +169,10 @@ def _wifi_connect_verified(con, iface, ssid, up_timeout, attempts, scan_wait, lo
         run(["nmcli", "device", "wifi", "rescan", "ssid", ssid], log, check=False, quiet=True)
         time.sleep(scan_wait)
 
-        proc = run(["nmcli", "--wait", up_timeout, "connection", "up", con], log, check=False)
+        up_cmd = ["nmcli", "--wait", up_timeout, "connection", "up", con]
+        if passwd_file:
+            up_cmd += ["passwd-file", passwd_file]
+        proc = run(up_cmd, log, check=False)
         if proc.returncode != 0:
             last = proc.stderr.strip() or "nmcli connection up failed"
             log.warning("wifi attempt %d/%d: up failed: %s", i, attempts, last)
@@ -298,7 +346,8 @@ def setup(profile, ident, net, log):
         ip, prefix, gw = _wifi_connect_verified(
             con, iface, profile["ssid"], up_timeout,
             int(net.get("wifi_connect_attempts", 4)),
-            float(net.get("wifi_scan_wait", 8)), log)
+            float(net.get("wifi_scan_wait", 8)), log,
+            psk=profile.get("psk"))
     else:
         run(["nmcli", "--wait", up_timeout, "connection", "up", con], log)
         ip, prefix, gw = _read_ipv4(iface, log)

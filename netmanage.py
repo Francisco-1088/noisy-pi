@@ -82,6 +82,30 @@ def _wifi_signal(iface, log):
     return ""
 
 
+def _wifi_secret_audit(con, log):
+    """Log whether the PSK is actually stored on the connection (no value leaked).
+
+    'Secrets were required, but not provided' means NM couldn't read the passphrase
+    from the connection. This confirms, before we even try to associate, whether the
+    secret made it onto the profile and how it's flagged — so a wiring problem
+    (missing psk) is distinguishable from an AP/RF problem.
+    """
+    proc = run(["nmcli", "-s", "-g",
+                "802-11-wireless-security.key-mgmt,"
+                "802-11-wireless-security.psk-flags,"
+                "802-11-wireless-security.psk",
+                "connection", "show", con], log, check=False, quiet=True)
+    lines = proc.stdout.splitlines()
+    kmgmt = lines[0].strip() if len(lines) > 0 else "?"
+    flags = lines[1].strip() if len(lines) > 1 else "?"
+    psk_stored = bool(lines[2].strip()) if len(lines) > 2 else False
+    log.info("wifi secret audit: key-mgmt=%s psk-flags=%s psk_stored=%s",
+             kmgmt, flags, psk_stored)
+    if not psk_stored and kmgmt in ("wpa-psk", "sae"):
+        log.warning("no PSK stored on %s — the passphrase did not reach the profile; "
+                    "check config.json/secrets.json for this slot", con)
+
+
 def _wifi_connect_verified(con, iface, ssid, up_timeout, attempts, scan_wait, log):
     """Activate WiFi and CONFIRM it actually works, retrying the whole sequence.
 
@@ -237,9 +261,14 @@ def setup(profile, ident, net, log):
             raise RuntimeError(
                 f"{profile['name']}: no PSK. Add it to secrets.json under "
                 f'psk["{profile["name"]}"] (see secrets.example.json).')
+        # psk-flags 0 = NM_SETTING_SECRET_FLAG_NONE: store the passphrase IN the
+        # connection so a non-interactive nmcli (cron/SSH, no secret agent) can read
+        # it. Without this NM may treat the secret as agent-owned and fail with
+        # "Secrets were required, but not provided".
         if sec == "wpa-psk":
             run(["nmcli", "connection", "modify", con,
-                 "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", profile["psk"]], log)
+                 "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", profile["psk"],
+                 "wifi-sec.psk-flags", "0"], log)
         elif sec == "sae":
             # WPA3-Personal (SAE). The SSID is WPA3-Transition (WPA2/WPA3 mixed),
             # and a WPA3-capable client like an iPhone negotiates SAE. SAE mandates
@@ -247,7 +276,7 @@ def setup(profile, ident, net, log):
             # "default", which resolves to required) here — not "optional".
             run(["nmcli", "connection", "modify", con,
                  "wifi-sec.key-mgmt", "sae", "wifi-sec.psk", profile["psk"],
-                 "wifi-sec.pmf", "required"], log)
+                 "wifi-sec.pmf", "required", "wifi-sec.psk-flags", "0"], log)
         elif sec == "owe":
             run(["nmcli", "connection", "modify", con, "wifi-sec.key-mgmt", "owe"], log)
         else:
@@ -265,6 +294,7 @@ def setup(profile, ident, net, log):
         raise RuntimeError(f"unknown profile kind {profile['kind']!r}")
 
     if profile["kind"] == "wifi":
+        _wifi_secret_audit(con, log)
         ip, prefix, gw = _wifi_connect_verified(
             con, iface, profile["ssid"], up_timeout,
             int(net.get("wifi_connect_attempts", 4)),

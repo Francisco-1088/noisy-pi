@@ -88,6 +88,31 @@ fill in the real PSK there:
 - `logs/crawl-<ts>-<profile>.log` — noisy's own output for that run; `./sites.sh` lists
   the URLs attempted (see below).
 
+### Auditing the WiFi slots
+
+The WiFi slots (4/5) are the flaky ones, so each WiFi run is **verified** and the result
+logged. An attempt only counts as working once the radio reaches the `connected` state
+**and** DHCP hands out a lease — `nmcli connection up` returning success is not enough on
+its own. Each attempt that fails association or DHCP is torn down and retried. Grep the log:
+
+| Log line | Meaning |
+|----------|---------|
+| `wifi OK on attempt N/M: ssid=… ip=… gw=… signal=…%` | associated **and** got a lease — working |
+| `wifi attempt N/M: …` | that attempt failed (bad up / not connected / no DHCP) — will retry |
+| `wifi failed to come up after M attempts (last: …)` | all retries exhausted — the slot did not connect |
+| `holding wifi association …s more …` | run finished early; dwelling so the dashboard registers it |
+
+For a quick live + historical check:
+
+```bash
+bash wifi_check.sh     # live wlan0 state, associated AP + signal, last 10 WiFi outcomes
+```
+
+**Retries** are controlled by `wifi_connect_attempts` (default 4) and `wifi_scan_wait`
+(seconds between the directed rescan and each `connection up`, default 8) in the `net`
+section of [`config.json`](config.json). Raise `wifi_connect_attempts` in a noisy RF
+environment; it takes effect next run.
+
 ---
 
 ## Single-interface mode (`noisy_random.py`)

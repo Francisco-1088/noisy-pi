@@ -68,13 +68,30 @@ def _read_ipv4(iface, log, tries=10, delay=2.0):
     return None, None, None
 
 
-def _wifi_up_with_retry(con, ssid, up_timeout, attempts, scan_wait, log):
-    """Activate a WiFi connection, retrying with a directed rescan each attempt.
+def _wifi_signal(iface, log):
+    """Signal % of the AP wlan0 is currently associated to (for audit logging)."""
+    proc = run(["nmcli", "-t", "-f", "IN-USE,SIGNAL,SSID",
+                "device", "wifi", "list", "ifname", iface],
+               log, check=False, quiet=True)
+    for line in proc.stdout.splitlines():
+        # -t fields are ':'-separated; IN-USE is "*" when associated. We only read
+        # IN-USE and SIGNAL (neither contains ':'), so an SSID with ':' is harmless.
+        parts = line.split(":")
+        if parts and parts[0] == "*":
+            return parts[1] if len(parts) > 1 else ""
+    return ""
 
-    In a noisy RF environment (or for a hidden OWE SSID) a single passive scan
-    often misses the network and NM returns 'could not be found' well before the
-    --wait timeout. A directed `rescan ssid <name>` probes for that specific SSID;
-    we scan, pause, then try to activate, a few times.
+
+def _wifi_connect_verified(con, iface, ssid, up_timeout, attempts, scan_wait, log):
+    """Activate WiFi and CONFIRM it actually works, retrying the whole sequence.
+
+    Each attempt: directed rescan -> `connection up` -> confirm the device reports
+    'connected' -> confirm DHCP handed us an IPv4 lease. A pass on any of those is
+    not enough on its own: NM can report 'up' while association or DHCP silently
+    fails, especially on a hidden OWE SSID or in a noisy RF environment. If any
+    check fails we tear the connection back down and try again, up to `attempts`
+    times. Returns (ip, prefix, gw) on success; raises RuntimeError if every
+    attempt fails, with the reason from the last one.
     """
     last = ""
     for i in range(1, attempts + 1):
@@ -82,15 +99,37 @@ def _wifi_up_with_retry(con, ssid, up_timeout, attempts, scan_wait, log):
         # by NM ("scanning not allowed..."), so ignore its failure and just wait.
         run(["nmcli", "device", "wifi", "rescan", "ssid", ssid], log, check=False, quiet=True)
         time.sleep(scan_wait)
+
         proc = run(["nmcli", "--wait", up_timeout, "connection", "up", con], log, check=False)
-        if proc.returncode == 0:
-            if i > 1:
-                log.info("wifi activated on attempt %d/%d", i, attempts)
-            return
-        last = proc.stderr.strip()
-        log.warning("wifi up attempt %d/%d failed: %s", i, attempts, last)
-        time.sleep(scan_wait)
-    raise RuntimeError(f"{con}: wifi activation failed after {attempts} attempts: {last}")
+        if proc.returncode != 0:
+            last = proc.stderr.strip() or "nmcli connection up failed"
+            log.warning("wifi attempt %d/%d: up failed: %s", i, attempts, last)
+            run(["nmcli", "connection", "down", con], log, check=False, quiet=True)
+            time.sleep(scan_wait)
+            continue
+
+        if not _wifi_is_connected(iface, log):
+            last = "nmcli reported up but device is not in 'connected' state"
+            log.warning("wifi attempt %d/%d: %s", i, attempts, last)
+            run(["nmcli", "connection", "down", con], log, check=False, quiet=True)
+            time.sleep(scan_wait)
+            continue
+
+        ip, prefix, gw = _read_ipv4(iface, log)
+        if not ip:
+            last = "associated but no DHCP lease"
+            log.warning("wifi attempt %d/%d: %s", i, attempts, last)
+            run(["nmcli", "connection", "down", con], log, check=False, quiet=True)
+            time.sleep(scan_wait)
+            continue
+
+        signal = _wifi_signal(iface, log)
+        log.info("wifi OK on attempt %d/%d: ssid=%s ip=%s/%s gw=%s signal=%s%%",
+                 i, attempts, ssid, ip, prefix, gw or "?", signal or "?")
+        return ip, prefix, gw
+
+    raise RuntimeError(
+        f"{con}: wifi failed to come up after {attempts} attempts (last: {last})")
 
 
 def _wifi_is_connected(iface, log):
@@ -226,17 +265,16 @@ def setup(profile, ident, net, log):
         raise RuntimeError(f"unknown profile kind {profile['kind']!r}")
 
     if profile["kind"] == "wifi":
-        _wifi_up_with_retry(
-            con, profile["ssid"], up_timeout,
+        ip, prefix, gw = _wifi_connect_verified(
+            con, iface, profile["ssid"], up_timeout,
             int(net.get("wifi_connect_attempts", 4)),
             float(net.get("wifi_scan_wait", 8)), log)
     else:
         run(["nmcli", "--wait", up_timeout, "connection", "up", con], log)
+        ip, prefix, gw = _read_ipv4(iface, log)
+        if not ip:
+            raise RuntimeError(f"{con}: no DHCP address on {iface} after activation")
     log.info("connection %s up as %s (mac=%s host=%s)", con, iface, ident["mac"], ident["hostname"])
-
-    ip, prefix, gw = _read_ipv4(iface, log)
-    if not ip:
-        raise RuntimeError(f"{con}: no DHCP address on {iface} after activation")
     log.info("%s got ip=%s/%s gw=%s", iface, ip, prefix, gw)
 
     _install_policy(ip, prefix, gw, iface, table, priority, log)

@@ -85,3 +85,15 @@ periodically, e.g. `find logs -name 'crawl-*.log' -mtime +7 -delete`.
 ```bash
 crontab -l | grep -v '# noisy-random' | crontab -
 ```
+
+## Pi Script Manager
+
+This repo is also a single-script *source* for the Pi Script Manager (`manifest.json` at the
+root, script `noisy-web`). Each job runs noisy **once** for `duration_s` and reports pages
+visited and unique sites; the cron/jitter/skip logic above is for standalone use only.
+
+- `pimgr_run.sh` is the entrypoint; `pimgr_noisy.py` runs noisy with the job's parameters.
+- Pick `iface`: `eth0` uses the default route; `wlan0` binds every HTTP connection and DNS lookup
+  to wlan0's address (and its DHCP DNS servers), so the traffic looks like a Wi-Fi client.
+- noisy itself and its Python packages come from the Manager's `traffic-gen` profile, pinned to
+  an upstream commit and checksum-verified, instead of being cloned at install time.

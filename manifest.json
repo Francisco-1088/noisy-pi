@@ -1,0 +1,23 @@
+{
+  "name": "noisy-web",
+  "version": "1",
+  "category": "traffic",
+  "description": "Human-like web browsing and DNS noise from virtual users (madereddy/noisy), out of eth0 or wlan0",
+  "entrypoint": "pimgr_run.sh",
+  "requires_root": false,
+  "timeout_s": 7500,
+  "requires": {
+    "commands": ["nmcli"]
+  },
+  "params": {
+    "iface": {"type": "iface", "default": "eth0"},
+    "duration_s": {"type": "int", "min": 30, "max": 7200, "default": 600},
+    "users": {"type": "int", "min": 1, "max": 20, "default": 3},
+    "threads": {"type": "int", "min": 1, "max": 20, "default": 5},
+    "min_sleep": {"type": "float", "min": 0.5, "max": 120, "default": 3},
+    "max_sleep": {"type": "float", "min": 1, "max": 600, "default": 20},
+    "dns_workers": {"type": "int", "min": 0, "max": 10, "default": 2},
+    "sites": {"type": "int", "min": 100, "max": 10000, "default": 2000},
+    "show_urls": {"type": "bool", "default": false}
+  }
+}

@@ -13,8 +13,11 @@ Slots (VLAN IDs and SSIDs come from the job's parameters):
   1  eth0 untagged    the Pi itself, no spoofing
   2  eth0.<vlan_a>    Apple MacBook    <name>-mbp
   3  eth0.<vlan_b>    Intel/Windows    WIN-<name>       (DHCP vendor class MSFT 5.0)
-  4  wlan0 ssid_sae   iPhone           <name>-iphone    (WPA3-SAE)
-  5  wlan0 ssid_owe   Samsung Galaxy   <name>-Galaxy-S24 (guest_security: sae, wpa-psk or owe)
+  4  wlan0 ssid_sae   iPhone           <name>-iphone    (psk_security: wpa-psk or sae)
+  5  wlan0 ssid_owe   Samsung Galaxy   <name>-Galaxy-S24 (guest_security: wpa-psk, sae or owe)
+
+wpa-psk (the default) matches a hand-made NetworkManager profile: key-mgmt wpa-psk, PMF default.
+It joins WPA2 and WPA3-Transition SSIDs. sae forces WPA3 with PMF required.
   6  wlan0 ssid_nac   eap_device       named after nac_user (802.1X, EAP-TTLS)
   7  wlan0 ssid_3pr   eap_device       named after tpr_user (802.1X, EAP-TTLS)
 
@@ -124,10 +127,10 @@ def profiles():
             "oui_pool": "intel", "hostname_template": "WIN-{name}", "user_agent": UA["win"],
             "dhcp_vendor_class": "MSFT 5.0", "dhcp_client_id": "mac"},
         4: {"slot": 4, "name": "wifi-sae-iphone", "kind": "wifi", "ssid": param("ssid_sae"),
-            "wifi_security": "sae", "psk": None, "spoof": True, "oui_pool": "apple",
+            "wifi_security": param("psk_security", "wpa-psk"), "psk": None, "spoof": True, "oui_pool": "apple",
             "hostname_template": "{name}-iphone", "user_agent": UA["iphone"]},
         5: {"slot": 5, "name": "wifi-owe-galaxy", "kind": "wifi", "ssid": param("ssid_owe"),
-            "wifi_security": param("guest_security", "sae"), "wifi_hidden": param("owe_hidden", "1") == "1", "psk": None,
+            "wifi_security": param("guest_security", "wpa-psk"), "wifi_hidden": param("owe_hidden", "1") == "1", "psk": None,
             "spoof": True, "oui_pool": "samsung", "hostname_template": "{name}-Galaxy-S24",
             "user_agent": UA["galaxy"]},
         6: eap_profile(6, "nac", "ssid_nac", "nac_user"),

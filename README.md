@@ -108,8 +108,8 @@ The multiface mode from the `multiface` branch, as a second Manager script. Each
 | 1 | `eth0` untagged | the Pi itself | – |
 | 2 | `eth0.<vlan_a>` (default VLAN 3) | Apple MacBook | `<name>-mbp` |
 | 3 | `eth0.<vlan_b>` (default VLAN 4) | Intel / Windows | `WIN-<name>` |
-| 4 | `wlan0` on `ssid_sae` (WPA3-SAE) | iPhone | `<name>-iphone` |
-| 5 | `wlan0` on `ssid_owe` (`guest_security`: `sae` default, `wpa-psk` or `owe`) | Samsung Galaxy S24 | `<name>-Galaxy-S24` |
+| 4 | `wlan0` on `ssid_sae` (`psk_security`: `wpa-psk` default, or `sae`) | iPhone | `<name>-iphone` |
+| 5 | `wlan0` on `ssid_owe` (`guest_security`: `wpa-psk` default, `sae` or `owe`) | Samsung Galaxy S24 | `<name>-Galaxy-S24` |
 | 6 | `wlan0` on `ssid_nac` (802.1X) as `nac_user` | `eap_device` | follows the device, with the username as the name |
 | 7 | `wlan0` on `ssid_3pr` (802.1X) as `tpr_user` | `eap_device` | follows the device, with the username as the name |
 

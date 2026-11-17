@@ -90,10 +90,57 @@ crontab -l | grep -v '# noisy-random' | crontab -
 
 This repo is also a single-script *source* for the Pi Script Manager (`manifest.json` at the
 root, script `noisy-web`). Each job runs noisy **once** for `duration_s` and reports pages
-visited and unique sites; the cron/jitter/skip logic above is for standalone use only.
+visited and unique sites. For runs on a timetable, with random delay and skips, use a schedule
+in the Manager (Schedules page) instead of the cron setup above.
 
 - `pimgr_run.sh` is the entrypoint; `pimgr_noisy.py` runs noisy with the job's parameters.
 - Pick `iface`: `eth0` uses the default route; `wlan0` binds every HTTP connection and DNS lookup
   to wlan0's address (and its DHCP DNS servers), so the traffic looks like a Wi-Fi client.
 - noisy itself and its Python packages come from the Manager's `traffic-gen` profile, pinned to
   an upstream commit and checksum-verified, instead of being cloned at install time.
+
+### noisy-multiface (folder `multiface/`)
+
+The multiface mode from the `multiface` branch, as a second Manager script. Each job is one slot:
+
+| Slot | Interface | Spoofed as | Hostname |
+|---|---|---|---|
+| 1 | `eth0` untagged | the Pi itself | – |
+| 2 | `eth0.<vlan_a>` (default VLAN 3) | Apple MacBook | `<name>-mbp` |
+| 3 | `eth0.<vlan_b>` (default VLAN 4) | Intel / Windows | `WIN-<name>` |
+| 4 | `wlan0` on `ssid_sae` (WPA3-SAE) | iPhone | `<name>-iphone` |
+| 5 | `wlan0` on `ssid_owe` (OWE) | Samsung Galaxy S24 | `<name>-Galaxy-S24` |
+
+- `slot=next` (the default) takes the next slot in `slots` (default `1-5`, e.g. `1-3,5` to skip
+  one). The counter is kept on the Pi. To pin the order in the Manager instead, schedule it with
+  *Take turns* lines `slot=1` … `slot=5`.
+- Each slot keeps the same MAC and first name across runs: `/var/lib/pimgr-noisy-multiface/identities.json`.
+- Policy routing uses tables 211–215 and rule priorities 10001–10005; the default route never
+  changes, so the agent and the tailnet stay on eth0. After a Wi-Fi slot, wlan0 reconnects to what
+  it was on before.
+- Wi-Fi slots run at least 330 s, so the Meter dashboard registers the client.
+- The crawler runs as the unprivileged job user; only the network setup runs as root.
+- Cancel tears the slot down. A run that was killed is cleaned up at the start of the next one.
+
+Set up once per Pi:
+- The switch port must trunk `vlan_a` and `vlan_b` tagged, with the management VLAN untagged.
+- Slot 4's passphrase lives only on the Pi, never in a job parameter. As root:
+
+  ```bash
+  sudo install -d -m 700 /etc/pimgr/noisy-multiface
+  sudo sh -c 'umask 077; cat > /etc/pimgr/noisy-multiface/secrets.json' <<'JSON'
+  {"psk": {"1Meter-SE-Labs-Spoke-1": "<passphrase>"}}
+  JSON
+  ```
+
+  Keys are SSIDs. The script refuses the file unless it is root-owned with mode 600. Without it,
+  slot 4 fails with a message and the rotation moves on.
+- The Pi needs the `traffic-gen` (or `lab-full`) profile, for noisy and its Python packages.
+
+Add it in the Manager as its own source (Admin › Script sources): this repo, branch `pimgr`,
+folder `multiface`, and tick *Allow root scripts* for that source only. It then runs as
+`<source>/noisy-multiface`. The `noisy-web` source stays as it is.
+
+Known limit: the passphrase is passed to `nmcli` on its command line when the Wi-Fi connection is
+created, so a local user could see it in the process list for a moment. The Pis have no
+interactive users besides the role accounts.

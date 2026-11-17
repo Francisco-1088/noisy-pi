@@ -25,7 +25,7 @@ import tempfile
 import time
 
 # nmcli args whose following value is a secret and must never hit the log.
-_SECRET_ARGS = {"wifi-sec.psk", "802-11-wireless-security.psk"}
+_SECRET_ARGS = {"wifi-sec.psk", "802-11-wireless-security.psk", "802-1x.password"}
 
 
 def _redact(cmd):
@@ -123,8 +123,11 @@ def _wifi_secret_audit(con, log):
                     "check config.json/secrets.json for this slot", con)
 
 
-def _make_passwd_file(psk):
-    """Write an nmcli passwd-file containing the WiFi PSK; return its path (0600).
+def _make_passwd_file(secret):
+    """Write an nmcli passwd-file with the Wi-Fi secret; return its path (0600).
+
+    `secret` is (setting, value): the PSK as 802-11-wireless-security.psk, or the 802.1X
+    password as 802-1x.password.
 
     Handing the secret to `connection up` via `passwd-file` lets a non-interactive
     nmcli answer NM's own secret request directly. NM re-requests the psk from a
@@ -134,14 +137,14 @@ def _make_passwd_file(psk):
     """
     fd, path = tempfile.mkstemp(prefix="noisy-wifi-", suffix=".pwd")
     try:
-        os.write(fd, f"802-11-wireless-security.psk:{psk}\n".encode())
+        os.write(fd, f"{secret[0]}:{secret[1]}\n".encode())
     finally:
         os.close(fd)
     os.chmod(path, 0o600)
     return path
 
 
-def _wifi_connect_verified(con, iface, ssid, up_timeout, attempts, scan_wait, log, psk=None):
+def _wifi_connect_verified(con, iface, ssid, up_timeout, attempts, scan_wait, log, secret=None):
     """Activate WiFi and CONFIRM it actually works, retrying the whole sequence.
 
     Each attempt: directed rescan -> `connection up` -> confirm the device reports
@@ -152,10 +155,10 @@ def _wifi_connect_verified(con, iface, ssid, up_timeout, attempts, scan_wait, lo
     times. Returns (ip, prefix, gw) on success; raises RuntimeError if every
     attempt fails, with the reason from the last one.
 
-    For PSK/SAE networks, `psk` is supplied to each activation via a passwd-file so
-    nmcli never has to fall back to a (nonexistent) secret agent.
+    For PSK/SAE and 802.1X networks, `secret` (setting, value) is supplied to each activation
+    via a passwd-file so nmcli never has to fall back to a (nonexistent) secret agent.
     """
-    passwd_file = _make_passwd_file(psk) if psk else None
+    passwd_file = _make_passwd_file(secret) if secret else None
     try:
         return _wifi_connect_loop(con, iface, ssid, up_timeout, attempts,
                                   scan_wait, log, passwd_file)
@@ -330,6 +333,20 @@ def setup(profile, ident, net, log):
                  "wifi-sec.pmf", "required", "wifi-sec.psk-flags", "0"], log)
         elif sec == "owe":
             run(["nmcli", "connection", "modify", con, "wifi-sec.key-mgmt", "owe"], log)
+        elif sec == "wpa-eap":
+            # WPA/WPA2-Enterprise, EAP-TTLS, server certificate not checked (lab RADIUS).
+            # PAP and MSCHAPv2 are TTLS's own inner methods (phase2-auth); GTC only exists
+            # as an inner EAP method (phase2-autheap), which is what Android and iOS send.
+            eap = profile.get("eap") or {}
+            if not eap.get("identity") or not eap.get("password"):
+                raise RuntimeError(f"{profile['name']}: no 802.1X username or password")
+            inner = eap.get("phase2", "pap")
+            phase2 = (["802-1x.phase2-autheap", inner] if inner == "gtc"
+                      else ["802-1x.phase2-auth", inner])
+            run(["nmcli", "connection", "modify", con,
+                 "wifi-sec.key-mgmt", "wpa-eap", "802-1x.eap", "ttls",
+                 "802-1x.identity", eap["identity"], "802-1x.password", eap["password"],
+                 "802-1x.password-flags", "0", "802-1x.system-ca-certs", "no"] + phase2, log)
         else:
             raise RuntimeError(f"unknown wifi_security {sec!r}")
         run(["nmcli", "connection", "modify", con,
@@ -350,7 +367,7 @@ def setup(profile, ident, net, log):
             con, iface, profile["ssid"], up_timeout,
             int(net.get("wifi_connect_attempts", 4)),
             float(net.get("wifi_scan_wait", 8)), log,
-            psk=profile.get("psk"))
+            secret=_wifi_secret(profile))
     else:
         run(["nmcli", "--wait", up_timeout, "connection", "up", con], log)
         ip, prefix, gw = _read_ipv4(iface, log)
@@ -362,6 +379,15 @@ def setup(profile, ident, net, log):
     _install_policy(ip, prefix, gw, iface, table, priority, log)
     return {"bind_ip": ip, "profile": profile["name"], "iface": iface, "con": con,
             "policy": {"ip": ip, "table": table, "priority": priority}}
+
+
+def _wifi_secret(profile):
+    """(setting, value) for the passwd-file, or None for open/OWE networks."""
+    if profile.get("wifi_security") == "wpa-eap":
+        return ("802-1x.password", (profile.get("eap") or {}).get("password"))
+    if profile.get("psk"):
+        return ("802-11-wireless-security.psk", profile["psk"])
+    return None
 
 
 def teardown(state, log):

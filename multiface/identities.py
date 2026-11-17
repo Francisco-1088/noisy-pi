@@ -79,8 +79,11 @@ def get_identity(profile):
         store[key] = entry
         _save(store)
 
-    hostname = profile["hostname_template"].format(name=entry["name"])
-    return {"name": entry["name"], "mac": entry["mac"], "hostname": hostname}
+    # 802.1X slots name the device after the account that signs in (fixed_name); the MAC is
+    # still generated once and kept.
+    name = profile.get("fixed_name") or entry["name"]
+    hostname = profile["hostname_template"].format(name=name)
+    return {"name": name, "mac": entry["mac"], "hostname": hostname}
 
 
 if __name__ == "__main__":

@@ -14,9 +14,10 @@ Slots (VLAN IDs and SSIDs come from the job's parameters):
   2  eth0.<vlan_a>    Apple MacBook    <name>-mbp
   3  eth0.<vlan_b>    Intel/Windows    WIN-<name>       (DHCP vendor class MSFT 5.0)
   4  wlan0 ssid_sae   iPhone           <name>-iphone    (WPA3-SAE)
-  5  wlan0 ssid_owe   Samsung Galaxy   <name>-Galaxy-S24 (OWE)
+  5  wlan0 ssid_owe   Samsung Galaxy   <name>-Galaxy-S24 (guest_security: sae, wpa-psk or owe)
 
-Slot 4's passphrase is never a job parameter (parameters are stored and audited). It is read
+Wi-Fi passphrases (slot 4, and slot 5 unless guest_security is owe) are never job parameters
+(parameters are stored and audited). They are read
 from /etc/pimgr/noisy-multiface/secrets.json on the Pi: {"psk": {"<ssid>": "<passphrase>"}},
 root-owned, mode 600. It is never printed.
 
@@ -95,7 +96,7 @@ def profiles():
             "wifi_security": "sae", "psk": None, "spoof": True, "oui_pool": "apple",
             "hostname_template": "{name}-iphone", "user_agent": UA["iphone"]},
         5: {"slot": 5, "name": "wifi-owe-galaxy", "kind": "wifi", "ssid": param("ssid_owe"),
-            "wifi_security": "owe", "wifi_hidden": param("owe_hidden", "1") == "1", "psk": None,
+            "wifi_security": param("guest_security", "sae"), "wifi_hidden": param("owe_hidden", "1") == "1", "psk": None,
             "spoof": True, "oui_pool": "samsung", "hostname_template": "{name}-Galaxy-S24",
             "user_agent": UA["galaxy"]},
     }
@@ -219,7 +220,7 @@ def main():
             print(f"slot {slot} needs an SSID (ssid_sae / ssid_owe)", file=sys.stderr)
             advance()
             return 2
-        if profile["wifi_security"] == "sae":
+        if profile["wifi_security"] in ("sae", "wpa-psk"):
             profile["psk"] = load_psk(profile["ssid"])
             if not profile["psk"]:
                 print(f"slot {slot}: no passphrase for SSID '{profile['ssid']}' in {SECRETS_FILE}. "

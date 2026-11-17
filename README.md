@@ -109,7 +109,7 @@ The multiface mode from the `multiface` branch, as a second Manager script. Each
 | 2 | `eth0.<vlan_a>` (default VLAN 3) | Apple MacBook | `<name>-mbp` |
 | 3 | `eth0.<vlan_b>` (default VLAN 4) | Intel / Windows | `WIN-<name>` |
 | 4 | `wlan0` on `ssid_sae` (WPA3-SAE) | iPhone | `<name>-iphone` |
-| 5 | `wlan0` on `ssid_owe` (OWE) | Samsung Galaxy S24 | `<name>-Galaxy-S24` |
+| 5 | `wlan0` on `ssid_owe` (`guest_security`: `sae` default, `wpa-psk` or `owe`) | Samsung Galaxy S24 | `<name>-Galaxy-S24` |
 
 - `slot=next` (the default) takes the next slot in `slots` (default `1-5`, e.g. `1-3,5` to skip
   one). The counter is kept on the Pi. To pin the order in the Manager instead, schedule it with
@@ -124,7 +124,8 @@ The multiface mode from the `multiface` branch, as a second Manager script. Each
 
 Set up once per Pi:
 - The switch port must trunk `vlan_a` and `vlan_b` tagged, with the management VLAN untagged.
-- Slot 4's passphrase lives only on the Pi, never in a job parameter. As root:
+- Wi-Fi passphrases (slot 4, and slot 5 unless `guest_security` is `owe`) live only on the Pi,
+  never in a job parameter. As root:
 
   ```bash
   sudo install -d -m 700 /etc/pimgr/noisy-multiface
@@ -133,8 +134,9 @@ Set up once per Pi:
   JSON
   ```
 
-  Keys are SSIDs. The script refuses the file unless it is root-owned with mode 600. Without it,
-  slot 4 fails with a message and the rotation moves on.
+  Keys are SSIDs: list both the slot 4 and the slot 5 SSID. The script refuses the file unless it
+  is root-owned with mode 600. Without a passphrase, the slot fails with a message and the
+  rotation moves on.
 - The Pi needs the `traffic-gen` (or `lab-full`) profile, for noisy and its Python packages.
 
 Add it in the Manager as its own source (Admin › Script sources): this repo, branch `pimgr`,

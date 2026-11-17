@@ -167,9 +167,28 @@ def _wifi_connect_verified(con, iface, ssid, up_timeout, attempts, scan_wait, lo
             os.remove(passwd_file)
 
 
+# What wpa_supplicant and NetworkManager say about a failed association: the reason behind
+# NM's generic "Secrets were required" (wrong key, SAE/PMF mismatch, EAP rejected, ...).
+_WIFI_LOG_RE = re.compile(r"sae|wrong_key|reason=|status_code=|auth|assoc|eap|pmf|"
+                          r"ctrl-event|key-mgmt|4-way|handshake|reject|timeout", re.I)
+
+
+def _wifi_failure_log(since, log, limit=12):
+    """Log the supplicant/NM journal lines since `since` (epoch) that explain a failure."""
+    proc = run(["journalctl", "-u", "wpa_supplicant", "-u", "NetworkManager", "--no-pager",
+                "-o", "cat", "--since", "@%d" % int(since)], log, check=False, quiet=True)
+    lines = [l.strip() for l in proc.stdout.splitlines() if _WIFI_LOG_RE.search(l)]
+    for line in lines[-limit:]:
+        log.warning("  wifi log: %s", line[:240])
+    if not lines:
+        log.warning("  wifi log: nothing from wpa_supplicant/NetworkManager (journalctl: %s)",
+                    (proc.stderr.strip() or "no matching lines")[:160])
+
+
 def _wifi_connect_loop(con, iface, ssid, up_timeout, attempts, scan_wait, log, passwd_file):
     last = ""
     for i in range(1, attempts + 1):
+        started = time.time()
         # Directed probe for the (possibly hidden) SSID. rescan can be rate-limited
         # by NM ("scanning not allowed..."), so ignore its failure and just wait.
         run(["nmcli", "device", "wifi", "rescan", "ssid", ssid], log, check=False, quiet=True)
@@ -182,6 +201,8 @@ def _wifi_connect_loop(con, iface, ssid, up_timeout, attempts, scan_wait, log, p
         if proc.returncode != 0:
             last = proc.stderr.strip() or "nmcli connection up failed"
             log.warning("wifi attempt %d/%d: up failed: %s", i, attempts, last)
+            if i in (1, attempts):
+                _wifi_failure_log(started, log)
             run(["nmcli", "connection", "down", con], log, check=False, quiet=True)
             time.sleep(scan_wait)
             continue

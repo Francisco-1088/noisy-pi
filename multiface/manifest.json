@@ -10,6 +10,10 @@
     "commands": ["nmcli", "ip"]
   },
   "params": {
+    "mode": {"type": "enum", "choices": ["run", "check"], "default": "run"},
+    "fix": {"type": "bool", "default": false},
+    "connect": {"type": "bool", "default": true},
+    "use_schedule_values": {"type": "bool", "default": true},
     "slot": {"type": "enum", "choices": ["next", "1", "2", "3", "4", "5", "6", "7"], "default": "next"},
     "slots": {"type": "string", "default": "1-7"},
     "duration_s": {"type": "int", "min": 60, "max": 7200, "default": 900},

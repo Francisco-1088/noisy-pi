@@ -152,6 +152,31 @@ Set up once per Pi:
   rotation moves on.
 - The Pi needs the `traffic-gen` (or `lab-full`) profile, for noisy and its Python packages.
 
+#### Check mode
+
+Run `noisy-multiface` with `mode=check` to see what a Pi is missing, slot by slot. It tests
+slots 1-7 (or the `slot` you pick) in a few minutes, with no crawl:
+
+1. **Pi:** noisy and its packages, NetworkManager and wpa_supplicant, eth0 link, wlan0 present,
+   radio on and not rfkill-blocked, Wi-Fi country, the secrets file, leftovers from killed runs.
+2. **Configuration:** SSID and username set, passphrase or password in secrets.json (never
+   printed), and the SSID seen in a scan with the security the slot expects.
+3. **Live test** (`connect=true`): bring the slot up as a run does, query every DNS server DHCP
+   handed out, fetch `http://connectivitycheck.gstatic.com/generate_204` from the slot's address,
+   tear down.
+
+Each slot ends PASS or FAIL with the failing stage (`config`, `scan`, `associate`,
+`authenticate`, `802.1X`, `dhcp`, `dns`, `http`) and a hint. Missing secrets come with one
+`sudo python3 -c ...` command that prompts for each of them.
+
+- `use_schedule_values=true` (default): SSIDs, usernames, VLANs and security come from this Pi's
+  last scheduled run (saved in `/var/lib/pimgr-noisy-multiface/last_params.json`, no secrets),
+  so you can tick several Pis on the Run page without per-branch values.
+- `fix=true`: also repairs what is safe to repair: Wi-Fi radio on, rfkill unblock, secrets file
+  owner and mode, leftover connections and policy rules. It never writes secrets.
+- A check holds the same lock as a run, so a scheduled run that starts meanwhile exits with
+  "another noisy-multiface run is still going".
+
 Add it in the Manager as its own source (Admin › Script sources): this repo, branch `pimgr`,
 folder `multiface`, and tick *Allow root scripts* for that source only. It then runs as
 `<source>/noisy-multiface`. The `noisy-web` source stays as it is.

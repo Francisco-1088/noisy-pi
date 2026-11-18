@@ -137,7 +137,8 @@ def _make_passwd_file(secret):
     """
     fd, path = tempfile.mkstemp(prefix="noisy-wifi-", suffix=".pwd")
     try:
-        os.write(fd, f"{secret[0]}:{secret[1]}\n".encode())
+        pairs = [secret] if isinstance(secret, tuple) else list(secret)
+        os.write(fd, "".join(f"{k}:{v}\n" for k, v in pairs).encode())
     finally:
         os.close(fd)
     os.chmod(path, 0o600)
@@ -403,9 +404,12 @@ def setup(profile, ident, net, log):
 
 
 def _wifi_secret(profile):
-    """(setting, value) for the passwd-file, or None for open/OWE networks."""
+    """(setting, value) or a list of them for the passwd-file, or None for open/OWE networks."""
     if profile.get("wifi_security") == "wpa-eap":
-        return ("802-1x.password", (profile.get("eap") or {}).get("password"))
+        # nmcli asks for the identity along with the password when NM re-requests 802.1X
+        # secrets; without it nmcli warns and gives up with "Secrets were required".
+        eap = profile.get("eap") or {}
+        return [("802-1x.identity", eap.get("identity")), ("802-1x.password", eap.get("password"))]
     if profile.get("psk"):
         return ("802-11-wireless-security.psk", profile["psk"])
     return None

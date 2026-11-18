@@ -30,6 +30,8 @@ never job parameters (parameters are stored and audited). They are read from
 /etc/pimgr/noisy-multiface/secrets.json on the Pi, root-owned, mode 600, and never printed:
   {"psk": {"<ssid>": "<passphrase>"}, "eap": {"<username>": "<password>"}}
 
+mode=check tests every slot instead of running noisy (check.py).
+
 Cancel (SIGTERM from the agent) still tears down: the agent waits 5 s before SIGKILL, and a run
 that was killed anyway is cleaned up at the start of the next one.
 """
@@ -51,6 +53,7 @@ HERE = Path(__file__).resolve().parent
 STATE_DIR = Path("/var/lib/pimgr-noisy-multiface")
 os.environ.setdefault("NOISY_IDENTITIES", str(STATE_DIR / "identities.json"))
 
+import check  # noqa: E402
 import identities  # noqa: E402  (reads NOISY_IDENTITIES at import)
 import netmanage  # noqa: E402
 
@@ -250,6 +253,18 @@ def main():
         print("another noisy-multiface run is still going on this Pi", file=sys.stderr)
         return 3
 
+    if param("mode", "run") == "check":
+        def out(line):
+            print(line, flush=True)
+        out(f"noisy-multiface check (fix={param('fix', '0') == '1'}, connect={param('connect', '1') == '1'})")
+        if param("use_schedule_values", "1") == "1":
+            check.use_saved_params(STATE_DIR, out)
+        slots = parse_slots(param("slots", "1-7")) if param("slot", "next") == "next" else [int(param("slot"))]
+        return check.run_check(profiles=profiles(), net=NET, slots=slots, secrets_file=SECRETS_FILE,
+                               state_dir=STATE_DIR, out=out, log=log, fix=param("fix", "0") == "1",
+                               connect=param("connect", "1") == "1")
+
+    check.save_run_params(STATE_DIR)
     slot, advance = pick_slot(log)
     profile = profiles()[slot]
     if profile["kind"] == "wifi":

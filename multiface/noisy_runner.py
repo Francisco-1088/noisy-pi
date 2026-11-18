@@ -76,6 +76,15 @@ def bind(noisy, ip, dns):
     noisy.dns_noise_worker = dns_noise_worker
 
 
+def skip_ua_download(noisy):
+    """Use noisy's built-in User-Agent list. useragents.me changed its page, so noisy's
+    download fails on every run and logs a traceback; nothing is lost by not trying."""
+    async def no_fetch(*_args, **_kwargs):
+        return []
+
+    noisy.fetch_user_agents = no_fetch
+
+
 def force_user_agent(noisy, ua):
     """Every virtual user sends `ua`; noisy's User-Agent download and refresh are skipped."""
     async def no_fetch(*_args, **_kwargs):
@@ -121,6 +130,7 @@ def main():
         logging.getLogger("aiohttp").setLevel(logging.ERROR)
 
     noisy.setup_logging = setup_logging
+    skip_ua_download(noisy)
     ip = os.environ.get("NOISY_BIND_IP")
     if ip:
         bind(noisy, ip, os.environ.get("NOISY_DNS", "").split())

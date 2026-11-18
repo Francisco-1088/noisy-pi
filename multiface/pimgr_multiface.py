@@ -245,6 +245,8 @@ def main():
         raise Stop()
     signal.signal(signal.SIGTERM, on_term)
 
+    if param("mode", "run") != "check":
+        check.save_run_params(STATE_DIR)   # before the lock, so even a run that overlaps a check saves
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     lock = open(LOCK_FILE, "w")
     try:
@@ -264,7 +266,6 @@ def main():
                                state_dir=STATE_DIR, out=out, log=log, fix=param("fix", "0") == "1",
                                connect=param("connect", "1") == "1")
 
-    check.save_run_params(STATE_DIR)
     slot, advance = pick_slot(log)
     profile = profiles()[slot]
     if profile["kind"] == "wifi":

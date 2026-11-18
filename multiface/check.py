@@ -396,15 +396,23 @@ def run_check(*, profiles, net, slots, secrets_file, state_dir, out, log, fix, c
                     servers = [s for s in netmanage.run(["nmcli", "-g", "IP4.DNS", "device", "show", state["iface"]],
                                                         log, check=False, quiet=True).stdout.replace("|", "\n").split()]
                     dns = []
+                    time.sleep(2)   # a fresh lease: give the gateway a moment to learn the new MAC
                     for srv in servers or ["(none)"]:
-                        st, det = dns_query(srv, TEST_HOST, src) if servers else ("error", "DHCP gave no DNS server")
+                        st, det = ("error", "DHCP gave no DNS server")
+                        for _ in range(3 if servers else 0):   # first queries after DHCP can be dropped
+                            st, det = dns_query(srv, TEST_HOST, src, timeout=3.0)
+                            if st != "timeout":
+                                break
                         dns.append((srv, st, det))
                         out(f"   DNS {srv}: {st} {det if st != 'ok' else ''}".rstrip())
                     good = [det for _, st, det in dns if st == "ok"]
                     if not good:
                         results[slot] = ("dns", "no DNS server resolved " + TEST_HOST, dns_hint(dns))
                         continue
-                    st, det = http_probe(good[0], src)
+                    for _ in range(2):
+                        st, det = http_probe(good[0], src)
+                        if st != "timeout":
+                            break
                     out(f"   HTTP {TEST_HOST}: {st} {det}")
                     if st == "ok":
                         partial = [d for d in dns if d[1] != "ok"]
